@@ -1,4 +1,4 @@
-package examples
+package example.mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
@@ -38,9 +38,9 @@ class dcache_data  extends Module with mips_macros {
     io.rdata     := dcache_data_ram_0.io.douta 
 
 
-// }
-// object dcache_data_test extends App{
-//     (new ChiselStage).emitVerilog(new dcache_data)
-// }
+}
+// // object dcache_data_test extends App{
+// //     (new ChiselStage).emitVerilog(new dcache_data)
+// // }
 
 

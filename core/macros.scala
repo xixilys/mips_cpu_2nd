@@ -1,4 +1,4 @@
-package examples
+package example.mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage.ChiselStage
@@ -281,6 +281,12 @@ val EXCEP_CODE_TLBL     = 0x2 .U     // tlbl, refill bfc00200, invalid bfc00380
 val EXCEP_CODE_TLBS     = 0x3 .U     // tlbs, refill bfc00200, invalid bfc00380
 val EXCEP_CODE_MOD      = 0x1 .U     // modified
 
+//branch prediction state machine code 
+val Strongly_Not_Taken = "b00".U
+val Strongly_Taken = "b11".U
+val Weakly_Not_Taken = "b01".U
+val Weakly_Taken = "b10".U
+
 def sign_extend(value:UInt,length:Int):UInt = 
     Cat(Cat(Seq.fill(32-length)(value(length-1))),value(length-1,0))
 
@@ -299,5 +305,21 @@ def get_wstrb(sram_size:UInt,sram_addr:UInt) = {
         "b0110".U -> "b1100".U
     ))
 }
-         
+//输入最好为4的整数倍
+def Hash(num:UInt) : UInt  = {
+  val length = num.getWidth 
+  val num_array = Wire(Vec((length/4),UInt(1.W)))
+  for(i <- 0 to (length/4)-1) {
+    num_array(i) :=  num(((i+1)*4 - 1),i*4).xorR
+  }
+  num_array.asUInt
+
+}
+def  branch_prediction_state_machine_code_decoder(code:UInt) :Bool  = {
+    MuxLookup(code,0.asUInt.asBool,Seq(
+        Strongly_Taken -> 1.U.asBool,
+        Strongly_Not_Taken -> 0.U.asBool,
+        Weakly_Not_Taken -> 0.U.asBool,
+        Weakly_Taken  -> 1.U.asBool))
+} 
 }
