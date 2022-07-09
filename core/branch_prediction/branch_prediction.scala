@@ -1,4 +1,4 @@
-package example.mips_cpu_2nd
+package mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
@@ -102,6 +102,6 @@ class  branch_prediction   extends Module  with mips_macros{
     test_reg := Cat(io.out_L,io.out_M,io.out_R)
 
 }
-object Branch_predection_test extends App{
-    (new ChiselStage).emitVerilog(new branch_prediction)
-}
+// object Branch_predection_test extends App{
+//     (new ChiselStage).emitVerilog(new branch_prediction)
+// }

@@ -1,4 +1,4 @@
-package example.mips_cpu_2nd
+package mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
@@ -8,22 +8,7 @@ import scala.math._
 import scala.reflect.runtime.Macros
 
 
-class Look_up_table(length : Int,width : Int) extends Module  with mips_macros{
-//类似于cache，但是不存在替换算法
-    val addr_width = (log10(length)/log10(2)).toInt
-    val io = IO(new Bundle {
-        val ar_addr  = Input(UInt(addr_width.W))
-        val aw_addr  = Input(UInt(addr_width.W))
-        val write = Input(Bool()) // 0 => 不写入 01 => 部分写入 10 => 全写入
-        val in = Input(UInt(width.W))
-        val out = Output(UInt(width.W))
-    })
-    val btb = RegInit(VecInit(Seq.fill(length)(0.U(width.W))))
-    io.out := Mux(io.write && io.aw_addr === io.ar_addr,io.in,btb(io.aw_addr))
-    for(  i <- 0 to length - 1) {
-        btb(i) := Mux(io.write && i.asUInt === io.aw_addr,io.in,btb(i))
-    }
-}
+
 
 class BTB_banks(length : Int,bank_num: Int) extends Module  with mips_macros{
 //类似于cache，但是不存在替换算法
@@ -79,7 +64,7 @@ class BTB_banks(length : Int,bank_num: Int) extends Module  with mips_macros{
     io.hit_M := tag_banks(io.ar_addr_M(bank_num_width + 1,2)).out === io.ar_addr_M(21 - (bank_num_width  + addr_width + 2))
     io.hit_R := tag_banks(io.ar_addr_R(bank_num_width + 1,2)).out === io.ar_addr_R(21 - (bank_num_width  + addr_width + 2))
 }
-object BTBS_banks_test extends App{
-    (new ChiselStage).emitVerilog(new BTB_banks(128,4))
-}
+// object BTBS_banks_test extends App{
+//     (new ChiselStage).emitVerilog(new BTB_banks(128,4))
+// }
 

@@ -1,4 +1,4 @@
-package example.mips_cpu_2nd
+package mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
@@ -58,8 +58,8 @@ class  BHT_banks (length : Int,width : Int ,bank_num: Int)  extends Module {
     
    // io.out := phts(io.ar_pht_addr).out
 }
-object BHT_banks_test extends App{
-    (new ChiselStage).emitVerilog(new BHT_banks(128,7,4))
-}
+// object BHT_banks_test extends App{
+//     (new ChiselStage).emitVerilog(new BHT_banks(128,7,4))
+// }
 
 

@@ -1,4 +1,4 @@
-package example.mips_cpu_2nd
+package mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
@@ -96,8 +96,8 @@ class  PHTS_banks (length : Int,width : Int ,ways: Int,bank_num: Int)  extends M
    // io.out := phts(io.ar_pht_addr).out
 }
 
-object PHTS_banks_test extends App{
-    (new ChiselStage).emitVerilog(new PHTS_banks(128,2,128,4))
-}
+// object PHTS_banks_test extends App{
+//     (new ChiselStage).emitVerilog(new PHTS_banks(128,2,128,4))
+// }
 
 

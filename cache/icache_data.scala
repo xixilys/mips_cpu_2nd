@@ -1,4 +1,4 @@
-package example.mips_cpu_2nd
+package mips_cpu_2nd
 
 import chisel3._
 import chisel3.stage._
