@@ -159,8 +159,8 @@ class reg_renaming extends Module {
    // io.src_out(0) := io.src_in(0)
 
 }
-object reg_renaming_test extends App{
-    (new ChiselStage).emitVerilog(new reg_renaming)
-}
+// object reg_renaming_test extends App{
+//     (new ChiselStage).emitVerilog(new reg_renaming)
+// }
 
 
