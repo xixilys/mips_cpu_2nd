@@ -71,11 +71,6 @@ class  fifo  (length :Int,width :Int,write_num:Int,read_num:Int) extends Module 
     // io.empty := Mux(write_length_points === read_length_points,write_banks_points <= read_banks_points || write_banks_points <= read_banks_points - write_num.asUInt,
     //     Mux(write_length_points === read_length_points - 1.U,bank_num.asUInt - write_banks_points + read_banks_points <= write_num.asUInt ,0.U.asBool))
 
-    
-
-
-
-
 }
 
 object fifo_test extends App{

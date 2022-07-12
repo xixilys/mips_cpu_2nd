@@ -66,15 +66,15 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
         val full = Output(Bool())
         val ready_en = Vec(LENGTH,Input(Bool()))
     })
-    def wire2bundle(num:UInt) : Data  = {
-        val bundle_ly = IO(Flipped(new issue_port))
-        bundle_ly.opcode  := num(6,0)
-        bundle_ly.psc_dest := num(12,7)
-        bundle_ly.psc_src2 := num(18,13)
-        bundle_ly.psc_src1 := num(24,19)
-        bundle_ly.ready := num(25)
-        bundle_ly
-    }
+    // def wire2bundle(num:UInt) : Data  = {
+    //     val bundle_ly = IO(Flipped(new issue_port))
+    //     bundle_ly.opcode  := num(6,0)
+    //     bundle_ly.psc_dest := num(12,7)
+    //     bundle_ly.psc_src2 := num(18,13)
+    //     bundle_ly.psc_src1 := num(24,19)
+    //     bundle_ly.ready := num(25)
+    //     bundle_ly
+    // }
     val issue_points = RegInit(0.U(LENGTH_WIDTH.W))
     val io_in= IO(Vec(2,( new issue_port))) //一次最多发射
     val io_out = IO(Vec(2,(Flipped(new issue_port))))//一次最多发射两个模块

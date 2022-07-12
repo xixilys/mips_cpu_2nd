@@ -10,8 +10,10 @@ class inst_cache_2nd  extends Module with mips_macros {
         //完全没用到chisel真正好的地方，我是废物呜呜呜呜
     val io = IO(new Bundle {
         val port = new axi_ram_port_multi_banking
-        val     sram_hit    = Output(UInt(1.W))
-        val     sram_branch_hit = Output(UInt(2.W))
+        val     sram_hit   = Output(UInt(1.W))
+        val sram_write_en  = Output(UInt(2.W))
+        val fec_1_pc_valid = Output(UInt(3.W))
+        // val     sram_branch_hit = Output(UInt(2.W))
     })
     val lru = RegInit(VecInit(Seq.fill(128)(0.U(1.W))))
     val sram_addr_reg = RegInit(0.U(32.W))
@@ -31,6 +33,7 @@ class inst_cache_2nd  extends Module with mips_macros {
     // val icache_R_tag_1     = Module(new icache_tag).io //复制两个
     val icache_tag_0     = Module(new icache_tag).io
     val icache_tag_1     = Module(new icache_tag).io
+
 
     // val write_counter_same = RegInit(0.U(1.W))
     
@@ -55,6 +58,7 @@ class inst_cache_2nd  extends Module with mips_macros {
     val write_counter  = RegInit(0.U(3.W))
     val wait_data_L  = RegInit(0.U(32.W))
     val wait_data_R  = RegInit(0.U(32.W))
+    val wait_data_M  = RegInit(0.U(32.W))
     val hit_reg = RegInit(0.U(1.W))
     //copy from thu llcl 
     //all control signals
@@ -108,31 +112,44 @@ class inst_cache_2nd  extends Module with mips_macros {
     val hit0 = icache_tag_0.hit.asBool && icache_tag_0.valid.asBool
     val hit1 = icache_tag_1.hit.asBool && icache_tag_1.valid.asBool
 
+    // val stage_1_write_en = Mux(hit,)
     // val hit_L = (icache_L_tag_0.hit.asBool && icache_L_tag_0.valid.asBool) || 
     //     (icache_L_tag_1.hit.asBool && icache_L_tag_1.valid.asBool)
     // val hit_R = (icache_R_tag_0.hit.asBool && icache_R_tag_0.valid.asBool) || 
     //     (icache_R_tag_1.hit.asBool && icache_R_tag_1.valid.asBool) //只有两个指令同时未命中
     
     val stage2_sram_addr_reg = RegEnable(Mux(stage2_flush,0.U,stage1_sram_addr_reg),0.U,stage2_stall) //把这个加4的过程放到stage2，尽量减少stage1的逻辑层数
-    val stage2_sram_addr_plus_reg = RegEnable(Mux(stage2_flush,0.U,Mux(stage1_sram_addr_reg(4,2) === 7.U,stage1_sram_addr_reg,stage1_sram_addr_reg + 4.U)),0.U,stage2_stall)
+    val stage2_sram_addr_plus_reg = RegEnable(Mux(stage2_flush,0.U,stage1_sram_addr_reg + 4.U),0.U,stage2_stall) //后面依靠output_valid 信号来决定哪个信号是有效的
+    val stage2_sram_addr_plus_plus_reg = RegEnable(Mux(stage2_flush,0.U,stage1_sram_addr_reg + 8.U),0.U,stage2_stall)
+
     val stage2_sram_cache_reg = RegEnable(Mux(stage2_flush,0.U,stage1_sram_cache_reg),0.U(1.W),stage2_stall)   
     val stage2_sram_req_reg = RegEnable(Mux(stage2_flush,0.U,stage1_sram_req_reg),0.U(1.W),stage2_stall)  
     
     val stage2_hit0_reg = RegEnable(Mux(stage2_flush,0.U(1.W),hit0),0.U(1.W),stage2_stall) 
     val stage2_hit1_reg = RegEnable(Mux(stage2_flush,0.U(1.W),hit1),0.U(1.W),stage2_stall) 
-    val stage2_hit_reg  = RegEnable(Mux(stage2_flush,0.U,hit),0.U,stage2_stall) 
-    
+    val stage2_hit_reg  = RegEnable(Mux(stage2_flush,0.U,hit),0.U(1.W),stage2_stall) 
+    val stage2_data_valid_reg = RegInit(0.U(3.W))
+    stage2_data_valid_reg := Mux(stage2_flush,0.U,Mux(stage2_stall,Mux(!stage1_sram_cache_reg.asBool,"b111".U,Mux(stage1_sram_addr_reg(4,2) <= 5.U , "b111".U,
+        Mux(stage1_sram_addr_reg(4,2)  === 6.U,"b011".U,"b001".U))),stage2_data_valid_reg))
+    val stage2_write_en_reg = RegInit(0.U(2.W))
+    stage2_write_en_reg := Mux(stage2_flush,0.U,Mux(stage2_stall,Mux(!stage1_sram_cache_reg.asBool,3.U,Mux(stage1_sram_addr_reg(4,2) <= 5.U , 3.U,
+        Mux(stage1_sram_addr_reg(4,2)  === 6.U,2.U,1.U))),stage2_write_en_reg))
     //stage 3  存入指令缓冲队列，在issue阶段前仍然为顺序结构
     val word_L_selection0 = icache_data_way0(stage2_sram_addr_reg(4,2)).rdata
     val word_L_selection1 = icache_data_way1(stage2_sram_addr_reg(4,2)).rdata
+
+    val word_M_selection0 = icache_data_way0(stage2_sram_addr_plus_reg(4,2)).rdata
+    val word_M_selection1 = icache_data_way1(stage2_sram_addr_plus_reg(4,2)).rdata
     
-    val word_R_selection0 = icache_data_way0(stage2_sram_addr_plus_reg(4,2)).rdata
-    val word_R_selection1 = icache_data_way1(stage2_sram_addr_plus_reg(4,2)).rdata
+    val word_R_selection0 = icache_data_way0(stage2_sram_addr_plus_plus_reg(4,2)).rdata
+    val word_R_selection1 = icache_data_way1(stage2_sram_addr_plus_plus_reg(4,2)).rdata
 
     val hit_word_L = Mux(stage2_hit0_reg.asBool,word_L_selection0,word_L_selection1) //如果没有命中可以通过data_ok来判断是否需要接受数据
+    val hit_word_M = Mux(stage2_hit0_reg.asBool,word_L_selection0,word_M_selection1) 
     val hit_word_R = Mux(stage2_hit0_reg.asBool,word_R_selection0,word_R_selection1)
 
     io.port.sram_rdata_L := Mux(work_state === state_data_ready ,wait_data_L,Mux(work_state === state_lookup,hit_word_L,0.U))
+    io.port.sram_rdata_M := Mux(work_state === state_data_ready ,wait_data_L,Mux(work_state === state_lookup,hit_word_L,0.U))
     io.port.sram_rdata_R := Mux(work_state === state_data_ready ,wait_data_R,Mux(work_state === state_lookup,hit_word_R,0.U))
 
     
@@ -149,14 +166,17 @@ class inst_cache_2nd  extends Module with mips_macros {
     wait_data_L := Mux(work_state === state_access_ram_1 && io.port.rvalid.asBool && write_counter === 0.U,io.port.rdata,
          Mux(work_state === state_miss_access_ram_1 && io.port.rvalid.asBool && write_counter === stage2_sram_addr_reg(4,2),io.port.rdata,wait_data_L))
 
-    wait_data_R := Mux(work_state === state_access_ram_1 && io.port.rvalid.asBool && write_counter === 1.U,io.port.rdata,
-         Mux(work_state === state_miss_access_ram_1 && io.port.rvalid.asBool && write_counter === stage2_sram_addr_plus_reg(4,2),io.port.rdata,wait_data_R))    
+    wait_data_M := Mux(work_state === state_access_ram_1 && io.port.rvalid.asBool && write_counter === 1.U,io.port.rdata,
+         Mux(work_state === state_miss_access_ram_1 && io.port.rvalid.asBool && write_counter === stage2_sram_addr_plus_reg(4,2),io.port.rdata,wait_data_M))    
+
+    wait_data_R := Mux(work_state === state_access_ram_1 && io.port.rvalid.asBool && write_counter === 2.U,io.port.rdata,
+         Mux(work_state === state_miss_access_ram_1 && io.port.rvalid.asBool && write_counter === stage2_sram_addr_plus_plus_reg(4,2),io.port.rdata,wait_data_R))    
 
     write_counter := Mux(work_state === state_miss_access_ram_1 || work_state === state_access_ram_1,Mux(io.port.rvalid.asBool && io.port.rlast.asBool,0.U,Mux(io.port.rvalid.asBool,write_counter+1.U,write_counter)),write_counter)
     // val write_counter_same = write_counter === sram_addr_reg(4,2) && work_state === state_miss_access_ram_1 && io.port.rvalid.asBool && hit
     
-
-
+    io.port.sram_data_valid := stage2_data_valid_reg
+    io.sram_write_en := Mux(io.port.sram_data_ok.asBool || stage2_hit_reg.asBool,stage2_write_en_reg,0.U)
 
     for(i <- 0 to 7 ) {icache_data_way0(i).wen  := Mux(work_state === state_miss_access_ram_1 && io.port.rvalid.asBool
         && lru(sram_addr_reg(11,5)) === 0.U && write_counter === i.asUInt,"b1111".U,0.U) }
@@ -169,14 +189,15 @@ class inst_cache_2nd  extends Module with mips_macros {
     icache_tag_1.wdata := Mux(work_state === state_miss_update  ,Cat(1.U(1.W),sram_addr_reg(31,12)),0.U)
 
        
-       
+    io.fec_1_pc_valid := Mux(!stage1_sram_cache_reg.asBool,"b111".U,Mux(stage1_sram_addr_reg(4,2) <= 5.U , "b111".U,
+        Mux(stage1_sram_addr_reg(4,2)  === 6.U,"b011".U,"b001".U)))
     //axi signal
     io.port.arid := 0.U
     io.port.araddr := Mux(work_state === state_access_ram_0,stage2_sram_addr_reg,
         Mux(work_state === state_miss_access_ram_0,Cat(stage2_sram_addr_reg(31,5),0.U(5.W)),0.U))
-    io.port.arlen  := Mux(stage2_sram_cache_reg.asBool,"b111".U,"b001".U)//毕竟是双发,来点双发的样子
+    io.port.arlen  := Mux(stage2_sram_cache_reg.asBool,"b111".U,"b010".U)//毕竟是双发,来点双发的样子 //一次来三个
     io.port.arsize := "b010".U
-    io.port.arburst := 1.U//Mux(sram_cache_reg.asBool,1.U,0.U) //啥时候都得burst传输
+    io.port.arburst := 1.U//Mux(sram_cache_reg.asBool,1.U,0.U) //啥时候都得burst传输 如果都可以burst传输的话，不知道支持不支持burst
     io.port.arlock  := 0.U
     io.port.arcache := 0.U
     io.port.arprot  := 0.U
@@ -207,8 +228,8 @@ class inst_cache_2nd  extends Module with mips_macros {
     io.port.bready := 0.U
 
 }
-// object inst_cache_test_2nd extends App{
-//     (new ChiselStage).emitVerilog(new inst_cache_2nd)
-// }
+object inst_cache_test_2nd extends App{
+    (new ChiselStage).emitVerilog(new inst_cache_2nd)
+}
 
 

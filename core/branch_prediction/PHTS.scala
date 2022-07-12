@@ -8,7 +8,7 @@ import scala.math._
 
 class  PHT(length : Int,width : Int) extends Module {
     val addr_width = (log10(length)/log10(2)).toInt
-     val io = IO(new Bundle {
+    val io = IO(new Bundle {
         val ar_addr  = Input(UInt(addr_width.W))
         val aw_addr  = Input(UInt(addr_width.W))
         val write = Input(Bool()) // 0 => 不写入 01 => 部分写入 10 => 全写入
@@ -20,7 +20,6 @@ class  PHT(length : Int,width : Int) extends Module {
     for(  i <- 0 to length - 1) {
         put(i) := Mux(io.write && i.asUInt === io.aw_addr,io.in,put(i))
     }
-
 }
 
 class  PHTS (length : Int,width : Int ,ways: Int)  extends Module {

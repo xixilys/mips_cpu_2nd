@@ -57,8 +57,12 @@ class axi_ram_port_multi_banking extends Bundle {
         val     sram_wdata  = Input(UInt(32.W))
         val     sram_addr_ok= Output(UInt(1.W))
         val     sram_data_ok= Output(UInt(1.W))
+        val     sram_data_valid = Output(UInt(3.W))
+
         val     sram_rdata_L  = Output(UInt(32.W))
+        val     sram_rdata_M  = Output(UInt(32.W))
         val     sram_rdata_R  = Output(UInt(32.W))
+
         val     sram_cache = Input(UInt(1.W))
         
         
