@@ -28,15 +28,23 @@ class decoder_port extends Bundle {
         // val   BreakD=      Output(UInt(1.W))
         // val   SysCallD=      Output(UInt(1.W))
         // val   EretD   =   Output(UInt(1.W))
-        val ALUCtrlD      =   Output(UInt(32.W)) // 独热码
+        //src1 -> rs src2 ->rt dest -> rd 默认大部分指令是这样的，但是有一部分不是的就得单独的分析
+        //===================这些还没写完，但是已经懒得写了==============================
+        val src1_has = Output(Bool())
+        val src2_has = Output(Bool())
+        val dest_has = Output(Bool())
+        //===================   ==========  =========================    =====
+
         val src1 = Output(UInt(5.W))
         val src2 = Output(UInt(5.W))
         val dest = Output(UInt(5.W))
+        
+        val ALUCtrlD      =   Output(UInt(32.W)) // 独热码
         val inst_opcode = Vec(7,Output(UInt(6.W)))
         val inst_type   = Vec(7,Output(Bool()))
         //   ALU MULDIV MEM branch PRIVILEGE self_in(自献) 还有一类就是伪nop指令
         val imm_value = Output(UInt()) 
-        val   BadInstrD=      Output(UInt(1.W))
+        val BadInstrD=      Output(UInt(1.W))
 }
 
 
@@ -59,12 +67,55 @@ class cu extends Module with mips_macros {
     val RsD    = io1.InstrD(25,21)
     val RtD    = io1.InstrD(20,16)
     val RdD    = io1.InstrD(15,11)
-
+    val i_type = Wire(Bool())//表明该指令用到了立即数
+    i_type     := MuxLookup(OpD,0.U,Seq(
+        ( OP_ADDI) -> 1.U,
+        ( OP_ANDI) -> 1.U,
+        ( OP_ADDIU)-> 1.U,
+        ( OP_SLTI) -> 1.U,
+        ( OP_SLTIU)-> 1.U,
+        ( OP_LUI)  -> 1.U,
+        ( OP_ORI)  -> 1.U,
+        ( OP_XORI) -> 1.U,
+        ( OP_BEQ)  -> 1.U,
+        ( OP_BNE ) -> 1.U,
+        ( OP_BGTZ) -> 1.U,
+        ( OP_BLEZ) -> 1.U,
+        ( OP_J   ) -> 1.U,
+        ( OP_JAL)  -> 1.U,
+        ( OP_LB)   -> 1.U,
+        ( OP_LBU)  -> 1.U,
+        ( OP_LH)   -> 1.U,
+        ( OP_LHU ) -> 1.U,
+        ( OP_LW )  -> 1.U,
+        ( OP_SB)   -> 1.U,
+        ( OP_SH)   -> 1.U,
+        ( OP_SW)   -> 1.U,
+        (OP_LWL )  -> 1.U,
+        (OP_LWR )  -> 1.U,
+        (OP_SWL )  -> 1.U,
+        (OP_SWR )  -> 1.U,
+        OP_REGIMM  -> MuxLookup(RtD,0.U,Seq( //后面这里可以改,在id时就开始算分支
+            RT_TEQI     -> 1.U,
+            RT_TNEI     -> 1.U,
+            RT_TGEI     -> 1.U,
+            RT_TGEIU    -> 1.U,
+            RT_TLTI     -> 1.U,
+            RT_TLTIU    -> 1.U
+        ))))
     val ImmD      = Mux(ImmUnsigned, unsign_extend(io1.InstrD(15,0),16),sign_extend(io1.InstrD(15,0),16))
     io.imm_value := ImmD
-    io.src1 := RsD
+//==============================不对
+    io.src1 := RsD//Mux(RsD)
     io.src2 := RtD
-    io.dest := RdD
+    io.src2_has := 1.U
+    io.src1_has := !i_type.asBool
+    io.dest_has := 1.U
+    io.dest := Mux(i_type.asBool,RsD,RdD)
+//==============================不想写了===================
+
+        
+//==============================
     ImmUnsigned := MuxLookup(OpD,0.U,Seq(
          OP_ADDIU   -> 1.U,
          OP_SLTIU   -> 1.U,
@@ -84,6 +135,7 @@ class cu extends Module with mips_macros {
             RT_TGEIU     -> (ID_TGEIU.U ),
             RT_TLTIU    -> (ID_TLTIU.U )
         ))))
+    
     val alu_type = MuxLookup(OpD,0.U,Seq(
         OP_ADDI    -> 1.U,
         OP_ANDI    -> 1.U,

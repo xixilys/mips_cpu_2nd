@@ -38,6 +38,8 @@ class  free_list (length :Int,width :Int) extends Module  with mips_macros{
         val write_en = Input(UInt(2.W))//0为前面的
         val read_out  = Vec(read_num,Output(UInt(width.W)))//0为前面的
         val write_in  = Vec(write_num,Input(UInt(width.W)))//0为前面的
+
+
         val empty = Output(Bool()) //浪费一点空间无所谓，只要剩余的空间小于最大的写入空间，就算满
         // val empty = Output(Bool()) //只有满足超过发射大小的情况下才叫做不空 ,不需要empty判定吧，我这个算是写优先】的效果
         //感觉应该还算比较难满的把 感觉

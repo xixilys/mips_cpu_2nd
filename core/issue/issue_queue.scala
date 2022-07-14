@@ -75,7 +75,7 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
     //     bundle_ly.ready := num(25)
     //     bundle_ly
     // }
-    val issue_points = RegInit(0.U(LENGTH_WIDTH.W))
+    val issue_points = RegInit(0.U(((LENGTH_WIDTH+1).W)))
     val io_in= IO(Vec(2,( new issue_port))) //一次最多发射
     val io_out = IO(Vec(2,(Flipped(new issue_port))))//一次最多发射两个模块
     val issue_list =  VecInit(Seq.fill(LENGTH)(Module(new regs_define).io))
@@ -85,8 +85,8 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
         
     //     issue_list(i).io.code_write_en := move_list(i) =/= 0.U || (issue_points === i.asUInt && io.inst_write(0)) || (issue_points === i.asUInt && io.inst_write(1))
     // }
-    val valid_points = issue_points + io.inst_write - io.inst_issue_num
-    issue_points := valid_points
+    val valid_points = issue_points  - io.inst_issue_num
+    issue_points := valid_points + io.inst_write
     io.full :=  issue_points >= (LENGTH ).asUInt //至少留下三个空间不能放东西，不然不好做
     
     for( i <- 0 until LENGTH ) {
@@ -106,23 +106,32 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
             }.otherwise{
                 issue_list(i).code_write_en := 0.U
             }
-       }.elsewhen(i.asUInt < io.inst_issue_addr(0) && i.asUInt < io.inst_issue_addr(1)){
+       }.elsewhen((i.asUInt < io.inst_issue_addr(0) && io.inst_issue_num === 1.U) ||  (i.asUInt < io.inst_issue_addr(1) && i.asUInt < io.inst_issue_addr(0) )){
             issue_list(i).io_in := issue_list(i+1).io_out
             issue_list(i).code_write_en := 0.U  //不需要管这个情况下到底接的啥，不允许写入就行
        }.elsewhen(i.asUInt >= io.inst_issue_addr(0) && i.asUInt < io.inst_issue_addr(1) ) {//默认第一个发射的就是最小的
-            issue_list(i).io_in := issue_list(i+1).io_out
-            when(io.inst_write =/= 0.U) {
+            when((io.inst_issue_addr(1) === (i + 1).U) ) {
+                issue_list(i).io_in := issue_list(i+2).io_out
+            }.otherwise{
+                issue_list(i).io_in := issue_list(i+1).io_out
+            }
+            when(io.inst_issue_num =/= 0.U) {
                 issue_list(i).code_write_en := 1.U
             }.otherwise{
                 issue_list(i).code_write_en := 0.U
             }
        }.otherwise {
-            when(io.inst_write === 2.U) {
+            when(io.inst_issue_num === 2.U) {
                 issue_list(i).io_in := issue_list(i+2).io_out
+                issue_list(i).code_write_en := 1.U
+            }.elsewhen(io.inst_issue_num === 1.U){
+                issue_list(i).io_in := issue_list(i+1).io_out
+                issue_list(i).code_write_en := 1.U
             }.otherwise{
                 issue_list(i).io_in := issue_list(i+1).io_out
+                issue_list(i).code_write_en := 0.U
             }
-            issue_list(i).code_write_en := 1.U
+
        }
     }else if( i == LENGTH - 2) {
         when( i.asUInt === valid_points ) {
@@ -141,7 +150,7 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
             }
         }.otherwise{
             issue_list(i).io_in := issue_list(i + 1).io_out
-            when(io.inst_write =/= 0.U) {
+            when((io.inst_issue_num =/= 0.U && !(io.inst_issue_addr(0) === (i+1).U && io.inst_issue_num === 1.U) ) ) {
                 issue_list(i).code_write_en := 1.U
             }.otherwise{
                 issue_list(i).code_write_en := 0.U
@@ -155,13 +164,17 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
             }.otherwise{
                 issue_list(i).code_write_en := 0.U
             }
-        }.otherwise{
+        }.elsewhen(i.asUInt === valid_points + 1.U){
             issue_list(i).io_in := io_in(1)
             when(io.inst_write === 2.U) {
                 issue_list(i).code_write_en := 1.U
             }.otherwise{
                 issue_list(i).code_write_en := 0.U
             }
+        }.otherwise{
+            issue_list(i).io_in := issue_list(i).io_out
+            issue_list(i).code_write_en := 0.U
+            
         }
     }
 }

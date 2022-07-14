@@ -161,9 +161,56 @@ inst_buffer.write_in(1) := Cat(inst_rdata_M,stage_fec_2_pc_M.io_out.pc_value_out
 inst_buffer.write_in(2) := Cat(inst_rdata_R,stage_fec_2_pc_R.io_out.pc_value_out)
 //full是用来控制前面流水线停止的，和这里无关
 
-
 //------------------decoder---------------
 
+class connector_with_inst extends Module{ 
+    val io = IO(new Bundle{
+        val stall = Input(Bool())
+        val flush = Input(Bool())   
+    })
+
+    val io_in =   IO(Flipped(new decoder_port) )
+    val io_out =   IO(new decoder_port) 
+
+    val src1_has =  RegInit(0.U.asBool)
+    val src2_has =  RegInit(0.U.asBool)
+    val dest_has =  RegInit(0.U.asBool)
+    //===================   ==========  =========================    =====
+
+    val ALUCtrlD    = RegInit(0.U(32.W)) // 独热码
+    val src1        = RegInit(0.U(5.W))
+    val src2        = RegInit(0.U(5.W))
+    val dest        = RegInit(0.U(5.W))
+    val inst_opcode = Vec(7,RegInit(0.U(6.W)))
+    val inst_type   = Vec(7,RegInit(0.U.asBool))
+    val imm_value   = RegInit(0.U(32.W))
+    val BadInstrD   = RegInit(0.U.asBool)
+
+// =================================================================
+    ALUCtrlD := Mux(io.flush,0.U,Mux(io.stall,io_in.ALUCtrlD,ALUCtrlD))
+    src1 := Mux(io.flush,0.U,Mux(io.stall,io_in.src1,src1))
+    src2 := Mux(io.flush,0.U,Mux(io.stall,io_in.src2,src2))
+    dest := Mux(io.flush,0.U,Mux(io.stall,io_in.dest,dest))
+    inst_opcode := Mux(io.flush,0.U,Mux(io.stall,io_in.inst_opcode,inst_opcode))
+    inst_type := Mux(io.flush,0.U,Mux(io.stall,io_in.inst_type,inst_type))
+    src1_has := Mux(io.flush,0.U,Mux(io.stall,io_in.ALUCtrlD,ALUCtrlD))
+    src2_has := Mux(io.flush,0.U,Mux(io.stall,io_in.src1,src1))
+    dest_has := Mux(io.flush,0.U,Mux(io.stall,io_in.dest_has,dest_has))
+    imm_value := Mux(io.flush,0.U,Mux(io.stall,io_in.imm_value,imm_value))
+    BadInstrD := Mux(io.flush,0.U,Mux(io.stall,io_in.BadInstrD,BadInstrD))
+    
+    io_out.ALUCtrlD := ALUCtrlD
+    io_out.src1 := src1
+    io_out.src2 := src2
+    io_out.dest := dest
+    io_out.inst_opcode := inst_opcode
+    io_out.inst_type := inst_type
+    io_out.imm_value := imm_value
+    io_out.src1_has := src1_has
+    io_out.src1_has := src1_has
+    io_out.dest_has := dest_has
+    io_out.BadInstrD := BadInstrD
+}
 val stage_decoder_stall = Wire(Bool())
 val stage_decoder_flush = Wire(Bool())
 val stage_decoder_pc = Seq.fill(2)(Module(new pc_detail))
@@ -173,20 +220,77 @@ for(i <- 0 to 1) {
     stage_decoder_pc(i).io.flush := stage_decoder_flush
     stage_decoder_pc(i).io.stall := stage_decoder_stall   
 }
-// val cu_decoder = Seq.fill(2)(Module(new cu)) // 两个解码模块
-// for(i<- 0 to 1) {
-//     cu_decoder(i).io1.InstrD := stage_decoder_pc(i).io_out.pc_inst_out
-// }
+val cu_decoder = Seq.fill(2)(Module(new cu)) // 两个解码模块
+val decoder2reg_renaming = Seq.fill(2)(Module(new connector_with_inst)) // 两个流水线控制模块
+for(i<- 0 to 1) {
+    cu_decoder(i).io1.InstrD := stage_decoder_pc(i).io_out.pc_inst_out
+    decoder2reg_renaming(i).io_in <> cu_decoder(i).io //decoder 2 reg_renaming
+    decoder2reg_renaming(i).io.stall := stage_decoder_stall
+    decoder2reg_renaming(i).io.flush := stage_decoder_flush
+}
+
 // flush and stall
 
     
 //-------------reg renaming----------
-  
+val reg_renaming_stall = Wire(Bool())
+val reg_renaming_flush = Wire(Bool())
+val reg_rename = Module(new reg_renaming).io
+val reg_renaming2issue =  Seq.fill(2)(Module(new connector_with_inst)) 
+reg_rename.dest_has := Cat(decoder2reg_renaming(1).io_out.dest_has,decoder2reg_renaming(0).io_out.dest_has)
+for(i <- 0 to 1) {
+    reg_rename.src_in(i*2) := decoder2reg_renaming(i).io_out.src1
+    reg_rename.src_in(i*2 + 1) := decoder2reg_renaming(i).io_out.src2  
+    reg_rename.dest_in(i) := decoder2reg_renaming(i).io_out.dest
+    reg_renaming2issue(i).io_in.src1 := reg_rename.src_out(i*2)
+    reg_renaming2issue(i).io_in.src2 := reg_rename.src_out(i*2 + 1)
+    reg_renaming2issue(i).io_in.dest := reg_rename.dest_out(i)
+
+    reg_renaming2issue(i).io_in.src1_has := decoder2reg_renaming(i).io_out.src1_has
+    reg_renaming2issue(i).io_in.src2_has := decoder2reg_renaming(i).io_out.src2_has
+    reg_renaming2issue(i).io_in.dest_has := decoder2reg_renaming(i).io_out.dest_has
+
+    reg_renaming2issue(i).io_in.imm_value := decoder2reg_renaming(i).io_out.imm_value
+    reg_renaming2issue(i).io_in.inst_type := decoder2reg_renaming(i).io_out.inst_type
+    reg_renaming2issue(i).io_in.BadInstrD := decoder2reg_renaming(i).io_out.BadInstrD
+    reg_renaming2issue(i).io_in.inst_opcode := decoder2reg_renaming(i).io_out.inst_opcode
+    reg_renaming2issue(i).io_in.ALUCtrlD := decoder2reg_renaming(i).io_out.ALUCtrlD
+    
+}
 
 //-------------issue----------
+//主要issue queue肯定是在alu queue里面的
 
-   
+val muldiv_issue_queue = Module (new issue_queue(32))
+val branch_issue_queue = Module (new issue_queue(32))
+val mem_issue_queue    = Module (new issue_queue(32))
+val alu_issue_queue    = Module (new issue_queue(32))
+val self_in_issue_queue      = Module (new issue_queue(32))
+val privilege_issue_queue    = Module (new issue_queue(32))
+val nop_issue_queue          = Module (new issue_queue(32))
 
+muldiv_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_muldiv)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_muldiv)
+branch_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_branch)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_branch)
+mem_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_mem)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_mem)
+alu_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_alu)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_alu)
+self_in_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_self_in)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_self_in)
+privilege_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_privilege)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_privilege)
+nop_issue_queue.io.inst_write := Cat(0.U(1.W),reg_renaming2issue(0).io_out.inst_opcode(opcode_nop)) +
+     reg_renaming2issue(1).io_out.inst_opcode(opcode_nop)
+    
+
+
+
+for( i <- 0 to 1) {
+
+
+}
    
 // ---------- PC ----------
   
