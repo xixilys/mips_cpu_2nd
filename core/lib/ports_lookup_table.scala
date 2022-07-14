@@ -17,10 +17,11 @@ class Look_up_table(length : Int,width : Int) extends Module  with mips_macros{
         val out = Output(UInt(width.W))
     })
     val btb = RegInit(VecInit(Seq.fill(length)(0.U(width.W))))
-    io.out := Mux(io.write && io.aw_addr === io.ar_addr,io.in,btb(io.aw_addr))
-    for(  i <- 0 to length - 1) {
-        btb(i) := Mux(io.write && i.asUInt === io.aw_addr,io.in,btb(i))
-    }
+    io.out := Mux(io.write && io.aw_addr === io.ar_addr,io.in,btb(io.ar_addr))
+    btb(io.aw_addr) := Mux(io.write,io.in, btb(io.aw_addr))
+    // for(  i <- 0 to length - 1) {
+    //     btb(i) := Mux(io.write && i.asUInt === io.aw_addr,io.in,btb(i))
+    // }
 }
 class two_port_lookup_table_with_two_port (length :Int,width :Int)  extends Module {  //true two ports lookup table
     val length_width = (log10(length)/log10(2)).toInt

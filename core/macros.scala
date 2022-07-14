@@ -261,7 +261,13 @@ val ALU_MADDU = 25
 val ALU_MSUB  = 26
 val ALU_MSUBU = 27
 
-
+val opcode_alu = 0.U
+val opcode_muldiv = 1.U
+val opcode_mem = 2.U
+val opcode_branch = 3.U
+val opcode_privilege = 4.U
+val opcode_self_in = 5.U
+val opcode_nop = 6.U
 
 
 
@@ -418,3 +424,118 @@ def  branch_prediction_state_machine_code_decoder(code:UInt) :Bool  = {
         Weakly_Taken  -> 1.U.asBool))
 } 
 }
+
+    // ins_id := MuxLookup(OpD,ID_NULL.U,Seq(
+    //     ( OP_ADDI) -> (ID_ADDI).U,
+    //     ( OP_ANDI) -> (ID_ANDI).U,
+    //     ( OP_ADDIU) -> (ID_ADDIU).U,
+    //     ( OP_SLTI) -> (ID_SLTI).U,
+    //     ( OP_SLTIU) -> (ID_SLTIU).U,
+    //     ( OP_LUI) -> (ID_LUI).U,
+    //     ( OP_ORI) -> (ID_ORI).U,
+    //     ( OP_XORI) -> (ID_XORI).U,
+    //     ( OP_BEQ) -> (ID_BEQ).U,
+    //     ( OP_BNE ) -> (ID_BNE.U ),
+    //     ( OP_BGTZ) -> (ID_BGTZ.U),
+    //     ( OP_BLEZ) -> (ID_BLEZ).U,
+    //     ( OP_J   ) -> (ID_J.U ),
+    //     ( OP_JAL) -> (ID_JAL.U),
+    //     ( OP_LB) -> (ID_LB.U),
+    //     ( OP_LBU) -> (ID_LBU.U),
+    //     ( OP_LH) -> (ID_LH.U),
+    //     ( OP_LHU ) -> (ID_LHU.U ),
+    //     ( OP_LW ) ->(ID_LW.U),
+    //     ( OP_SB) -> (ID_SB.U),
+    //     ( OP_SH) -> (ID_SH.U),
+    //     ( OP_SW) -> (ID_SW.U),
+    //     (OP_LWL ) -> (ID_LWL).U,
+    //     (OP_LWR ) -> (ID_LWR).U,
+    //     (OP_SWL ) -> (ID_SWL).U,
+    //     (OP_SWR ) -> (ID_SWR).U,
+    //     OP_CACHE  -> (ID_CACHE).U, //cache指令，后面应该是只实现了其中几个，后续仔细讨论
+    //     OP_PREF   -> (ID_PREF).U,
+    //     ( OP_SPECIAL) -> MuxLookup(FunctD,ID_NULL.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
+    //         ( FUNC_SUB) ->   (ID_SUB).U,
+    //         ( FUNC_AND ) ->   (ID_AND ).U,
+    //         ( FUNC_OR) ->   (ID_OR).U,
+    //         ( FUNC_SLT) ->   (ID_SLT).U,
+    //         ( FUNC_SLL) ->   (ID_SLL).U,
+    //         ( FUNC_SLTU ) ->   (ID_SLTU ).U,
+    //         ( FUNC_XOR) ->   (ID_XOR).U,
+    //         ( FUNC_ADD) ->   (ID_ADD).U,
+    //         ( FUNC_ADDU ) ->   (ID_ADDU ).U,
+    //         ( FUNC_SUBU ) ->   (ID_SUBU ).U,
+
+    //         ( FUNC_DIV) ->   (ID_DIV).U,
+    //         ( FUNC_DIVU) ->   (ID_DIVU).U,
+    //         ( FUNC_MULT) ->   (ID_MULT).U,
+    //         ( FUNC_MULTU) ->   (ID_MULTU).U,
+
+    //         ( FUNC_NOR) ->   (ID_NOR).U,
+    //         ( FUNC_SLLV ) ->   (ID_SLLV ).U,
+    //         ( FUNC_SRA) ->   (ID_SRA).U,
+    //         ( FUNC_SRAV) ->   (ID_SRAV).U,
+    //         ( FUNC_SRL) ->   (ID_SRL).U,
+    //         ( FUNC_SRLV) ->   (ID_SRLV ).U,
+
+    //         ( FUNC_JR)   ->   (ID_JR).U,
+    //         ( FUNC_JALR) ->   (ID_JALR.U),
+            
+    //         ( FUNC_MFHI ) ->   (ID_MFHI.U ),
+    //         ( FUNC_MFLO) ->   (ID_MFLO.U ),
+    //         ( FUNC_MTHI) ->   (ID_MTHI.U),
+    //         ( FUNC_MTLO) ->   (ID_MTLO.U),
+    //         ( FUNC_BREAK ) ->   (ID_BREAK.U ),
+    //         ( FUNC_SYSCALL )->   (ID_SYSCALL.U ),
+    //           FUNC_MOVN     -> (ID_MOVN.U),
+    //           FUNC_MOVZ     -> ID_MOVZ.U,
+    //           FUNC_TEQ      -> (ID_TEQ.U),
+    //           FUNC_TNE      -> (ID_TNE.U),
+    //           FUNC_TGEU     -> ID_TGEU.U,
+    //           FUNC_TGE      -> ID_TGE.U,
+    //           FUNC_TLT      -> ID_TLT.U,
+    //           FUNC_TLTU     -> ID_TLTU.U)),
+    //     OP_SPECIAL2 -> MuxLookup(FunctD,ID_NULL.U,Seq(
+    //         FUNC_CLO -> ID_CLO.U,
+    //         FUNC_CLZ    -> ID_CLZ.U,
+    //         FUNC_MUL    -> ID_MUL.U,
+    //         FUNC_MADD   -> ID_MADD.U,
+    //         FUNC_MADDU -> ID_MADDU.U,
+    //         FUNC_MSUB -> ID_MSUB.U,
+    //         FUNC_MSUBU -> ID_MSUBU.U
+    //     )),
+        
+    //     OP_REGIMM -> MuxLookup(RtD,ID_NULL.U,Seq( //后面这里可以改,在id时就开始算分支
+    //         RT_BGEZ   -> (ID_BGEZ.U ),
+    //         RT_BGEZAL   -> (ID_BGEZAL.U ),
+    //         RT_BLTZ   -> (ID_BLTZ.U ),
+    //         RT_BLTZAL   -> (ID_BLTZAL.U ),
+    //         RT_TEQI -> (ID_TEQI.U ),
+    //         RT_TNEI     -> (ID_TNEI.U ),
+    //         RT_TGEI     -> (ID_TGEI.U ),
+    //         RT_TGEIU     -> (ID_TGEIU.U ),
+    //         RT_TLTI     -> (ID_TLTI.U),
+    //         RT_TLTIU    -> (ID_TLTIU.U )
+    //     )),
+    //     ( OP_PRIVILEGE) -> MuxLookup(coD,ID_NULL.U,Seq(
+    //         CO_SET -> MuxLookup(FunctD,ID_NULL.U,Seq(
+    //                 FUNC_TLBP -> ID_TLBP.U,
+    //                 FUNC_TLBR -> ID_TLBR.U,
+    //                 FUNC_TLBWI -> ID_TLBWI.U,
+    //                 FUNC_TLBWR  -> ID_TLBWR.U,
+    //                 FUNC_ERET -> ID_ERET.U,
+    //                 FUNC_WAIT -> ID_WAIT.U//暂时不知道是啥，还不想写
+    //         )),
+    //         CO_RESET -> MuxLookup(coD_res,ID_NULL.U,Seq(
+    //                 COP_MFC0 -> ID_MFC0.U,
+    //                 COP_MTC0 -> ID_MTC0.U
+    //         ))
+
+    //     ))
+    // //     // MuxCase(ID_NULL.U,Seq( //后面这里可以改,在id时就开始算分支
+    // //     //     (RsD === RS_ERET )  -> (ID_ERET.U ),
+    // //     //     (RsD === RS_MFC0 )  -> (ID_MFC0.U ),
+    // //     //     (RsD === RS_MTC0 )  -> (ID_MTC0.U )
+    // //     // ))
+
+    // ))

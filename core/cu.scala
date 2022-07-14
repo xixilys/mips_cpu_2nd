@@ -5,29 +5,38 @@ import chisel3.stage._
 import chisel3.util._
 import org.yaml.snakeyaml.events.Event.ID
 class decoder_port extends Bundle {
-        val   BranchD_Flag  =   Output(UInt(1.W))
-        val   RegWriteD     =   Output(UInt(1.W))
-        val   MemToRegD     =   Output(UInt(1.W))
-        val   MemWriteD     =   Output(UInt(1.W))
-        val   ALUCtrlD      =   Output(UInt(24.W)) // 独热码
-        val   ALUSrcD       =   Output(UInt(2.W))
-        val   RegDstD=      Output(UInt(2.W))
-        val   ImmUnsigned=      Output(UInt(1.W))
-        val   BranchD=      Output(UInt(6.W))
-        val   JumpD=      Output(UInt(1.W))
-        val   JRD=      Output(UInt(1.W))
-        val   LinkD=      Output(UInt(1.W))
-        val   HiLoWriteD=      Output(UInt(2.W))
-        val   HiLoToRegD=      Output(UInt(2.W))
-        val   CP0WriteD=      Output(UInt(1.W))
-        val   CP0ToRegD=      Output(UInt(1.W))
-        val   LoadUnsignedD=      Output(UInt(1.W))
-        val   MemWidthD=      Output(UInt(2.W))
-        val   MemRLD=      Output(UInt(2.W))
+        // val   BranchD_Flag  =   Output(UInt(1.W))
+        // val   RegWriteD     =   Output(UInt(1.W))
+        // val   MemToRegD     =   Output(UInt(1.W))
+        // val   MemWriteD     =   Output(UInt(1.W))
+       
+        // val   ALUSrcD       =   Output(UInt(2.W))
+        // val   RegDstD=      Output(UInt(2.W))
+        // val   ImmUnsigned=      Output(UInt(1.W))
+        // val   BranchD=      Output(UInt(6.W))
+        // val   JumpD=      Output(UInt(1.W))
+        // val   JRD=      Output(UInt(1.W))
+        // val   LinkD=      Output(UInt(1.W))
+        // val   HiLoWriteD=      Output(UInt(2.W))
+        // val   HiLoToRegD=      Output(UInt(2.W))
+        // val   CP0WriteD=      Output(UInt(1.W))
+        // val   CP0ToRegD=      Output(UInt(1.W))
+        // val   LoadUnsignedD=      Output(UInt(1.W))
+        // val   MemWidthD=      Output(UInt(2.W))
+        // val   MemRLD=      Output(UInt(2.W))
         // val   BadInstrD=      Output(UInt(1.W))
         // val   BreakD=      Output(UInt(1.W))
         // val   SysCallD=      Output(UInt(1.W))
         // val   EretD   =   Output(UInt(1.W))
+        val ALUCtrlD      =   Output(UInt(32.W)) // 独热码
+        val src1 = Output(UInt(5.W))
+        val src2 = Output(UInt(5.W))
+        val dest = Output(UInt(5.W))
+        val inst_opcode = Vec(7,Output(UInt(6.W)))
+        val inst_type   = Vec(7,Output(Bool()))
+        //   ALU MULDIV MEM branch PRIVILEGE self_in(自献) 还有一类就是伪nop指令
+        val imm_value = Output(UInt()) 
+        val   BadInstrD=      Output(UInt(1.W))
 }
 
 
@@ -35,223 +44,283 @@ class decoder_port extends Bundle {
 class cu extends Module with mips_macros {
     val io1 = IO(new Bundle{
         val   InstrD = Input(UInt(32.W))
-        val   BadInstrD=      Output(UInt(1.W))
-        val   BreakD=      Output(UInt(1.W))
-        val   SysCallD=      Output(UInt(1.W))
-        val   EretD   =   Output(UInt(1.W))
+       
+        // val   BreakD=      Output(UInt(1.W))
+        // val   SysCallD=      Output(UInt(1.W))
+        // val   EretD   =   Output(UInt(1.W))
     })   
     val io = IO(new decoder_port )
 
-    
+    val ImmUnsigned = Wire(Bool()) //为0表示立即数需要进行无符号扩展
     val OpD = io1.InstrD(31,26)//首字母为o的大写(>_<)
     val FunctD = io1.InstrD(5,0)
     val coD = io1.InstrD(25)
     val coD_res = io1.InstrD(24,21)
     val RsD    = io1.InstrD(25,21)
     val RtD    = io1.InstrD(20,16)
-    val ins_id = Wire(UInt(7.W))
+    val RdD    = io1.InstrD(15,11)
 
+    val ImmD      = Mux(ImmUnsigned, unsign_extend(io1.InstrD(15,0),16),sign_extend(io1.InstrD(15,0),16))
+    io.imm_value := ImmD
+    io.src1 := RsD
+    io.src2 := RtD
+    io.dest := RdD
+    ImmUnsigned := MuxLookup(OpD,0.U,Seq(
+         OP_ADDIU   -> 1.U,
+         OP_SLTIU   -> 1.U,
+         OP_LBU     -> 1.U,
+         OP_LHU     -> 1.U,
+         OP_SPECIAL -> MuxLookup(FunctD,0.U,Seq(
+            FUNC_SLTU  ->  1.U,
+            FUNC_SUBU  ->  1.U,
+            FUNC_SUBU  ->  1.U,
+            FUNC_ADDU  ->  1.U,
+            FUNC_DIVU  ->  1.U,
+            FUNC_MULTU ->  1.U,
+            FUNC_TGEU  ->  1.U,
+            FUNC_MADDU ->  1.U,
+            FUNC_MSUBU ->  1.U)),
+        OP_REGIMM -> MuxLookup(RtD,0.U,Seq( //后面这里可以改,在id时就开始算分支
+            RT_TGEIU     -> (ID_TGEIU.U ),
+            RT_TLTIU    -> (ID_TLTIU.U )
+        ))))
+    val alu_type = MuxLookup(OpD,0.U,Seq(
+        OP_ADDI    -> 1.U,
+        OP_ANDI    -> 1.U,
+        OP_ADDIU   -> 1.U,
+        OP_SLTI    -> 1.U,
+        OP_SLTIU   -> 1.U,
+        OP_LUI     -> 1.U,
+        OP_ORI     -> 1.U,
+        OP_XORI    -> 1.U,
+        OP_SPECIAL -> MuxLookup(FunctD,0.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
+            FUNC_SUB  ->  1.U,
+            FUNC_AND  ->  1.U,
+            FUNC_OR   ->  1.U,
+            FUNC_SLT  ->  1.U,
+            FUNC_SLL  ->  1.U,
+            FUNC_SLTU ->  1.U,
+            FUNC_XOR ->  1.U,
+            FUNC_ADD  ->  1.U,
+            FUNC_ADDU ->  1.U,
+            FUNC_SUBU ->  1.U,
+            FUNC_NOR  ->  1.U,
+            FUNC_SLLV ->  1.U,
+            FUNC_SRA  ->  1.U,
+            FUNC_SRAV ->  1.U,
+            FUNC_SRL  ->  1.U,
+            FUNC_SRLV ->  1.U,
+            FUNC_MOVN ->  1.U,
+            FUNC_MOVZ ->  1.U)),
+       
+        OP_SPECIAL2 -> MuxLookup(FunctD,0.U,Seq(
+            FUNC_CLO  -> 1.U,
+            FUNC_CLZ  -> 1.U
+    ))))
+    io.inst_opcode(opcode_alu) := MuxLookup(OpD,ID_NULL.U,Seq(
+        OP_ADDI    -> ID_ADDI.U,
+        OP_ANDI    -> ID_ANDI.U,
+        OP_ADDIU   -> ID_ADDIU.U,
+        OP_SLTI    -> ID_SLTI.U,
+        OP_SLTIU   -> ID_SLTIU.U,
+        OP_LUI     -> ID_LUI.U,
+        OP_ORI     -> ID_ORI.U,
+        OP_XORI    -> ID_XORI.U,
+        OP_SPECIAL -> MuxLookup(FunctD,ID_NULL.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
+            FUNC_SUB  ->  ID_SUB.U,
+            FUNC_AND  ->  ID_AND.U,
+            FUNC_OR   ->  ID_OR.U,
+            FUNC_SLT  ->  ID_SLT.U,
+            FUNC_SLL  ->  ID_SLL.U,
+            FUNC_SLTU ->  ID_SLTU.U,
+            FUNC_XOR ->   ID_XOR.U,
+            FUNC_ADD  ->  ID_ADD.U,
+            FUNC_ADDU ->  ID_ADDU.U,
+            FUNC_SUBU ->  ID_SUBU.U,
+            FUNC_NOR  ->  ID_NOR.U,
+            FUNC_SLLV ->  ID_SLLV.U,
+            FUNC_SRA  ->  ID_SRA.U,
+            FUNC_SRAV ->  ID_SRAV.U,
+            FUNC_SRL  ->  ID_SRL.U,
+            FUNC_SRLV ->  ID_SRLV.U,
+            FUNC_MOVN ->  ID_MOVN.U,
+            FUNC_MOVZ ->  ID_MOVZ.U)),
+       
+        OP_SPECIAL2 -> MuxLookup(FunctD,ID_NULL.U,Seq(
+            FUNC_CLO  -> ID_CLO.U,
+            FUNC_CLZ  -> ID_CLZ.U
+    ))))
 
-    // io.BranchD_Flag := Mux(OpD === )
-    ins_id := MuxLookup(OpD,ID_NULL.U,Seq(
-        ( OP_ADDI) -> (ID_ADDI).U,
-        ( OP_ANDI) -> (ID_ANDI).U,
-        ( OP_ADDIU) -> (ID_ADDIU).U,
-        ( OP_SLTI) -> (ID_SLTI).U,
-        ( OP_SLTIU) -> (ID_SLTIU).U,
-        ( OP_LUI) -> (ID_LUI).U,
-        ( OP_ORI) -> (ID_ORI).U,
-        ( OP_XORI) -> (ID_XORI).U,
+    val branch_type = MuxLookup(OpD,0.U,Seq(  
+        OP_BEQ   -> 1.U,
+        OP_BNE   -> 1.U,
+        OP_BGTZ  -> 1.U,
+        OP_BLEZ  -> 1.U,
+        OP_J     -> 1.U,
+        OP_JAL   -> 1.U,
+        OP_REGIMM -> MuxLookup(RtD,0.U,Seq( //后面这里可以改,在id时就开始算分支
+            RT_BGEZ    -> 1.U,
+            RT_BGEZAL  -> 1.U,
+            RT_BLTZ    -> 1.U,
+            RT_BLTZAL  -> 1.U
+        ))))
+    io.inst_opcode(opcode_branch) := MuxLookup(OpD,0.U,Seq(  
         ( OP_BEQ) -> (ID_BEQ).U,
         ( OP_BNE ) -> (ID_BNE.U ),
         ( OP_BGTZ) -> (ID_BGTZ.U),
         ( OP_BLEZ) -> (ID_BLEZ).U,
         ( OP_J   ) -> (ID_J.U ),
         ( OP_JAL) -> (ID_JAL.U),
-        ( OP_LB) -> (ID_LB.U),
-        ( OP_LBU) -> (ID_LBU.U),
-        ( OP_LH) -> (ID_LH.U),
-        ( OP_LHU ) -> (ID_LHU.U ),
-        ( OP_LW ) ->(ID_LW.U),
-        ( OP_SB) -> (ID_SB.U),
-        ( OP_SH) -> (ID_SH.U),
-        ( OP_SW) -> (ID_SW.U),
-        (OP_LWL ) -> (ID_LWL).U,
-        (OP_LWR ) -> (ID_LWR).U,
-        (OP_SWL ) -> (ID_SWL).U,
-        (OP_SWR ) -> (ID_SWR).U,
-        OP_CACHE  -> (ID_CACHE).U, //cache指令，后面应该是只实现了其中几个，后续仔细讨论
-        OP_PREF   -> (ID_PREF).U,
-        ( OP_SPECIAL) -> MuxLookup(FunctD,ID_NULL.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
-            ( FUNC_SUB) ->   (ID_SUB).U,
-            ( FUNC_AND ) ->   (ID_AND ).U,
-            ( FUNC_OR) ->   (ID_OR).U,
-            ( FUNC_SLT) ->   (ID_SLT).U,
-            ( FUNC_SLL) ->   (ID_SLL).U,
-            ( FUNC_SLTU ) ->   (ID_SLTU ).U,
-            ( FUNC_XOR) ->   (ID_XOR).U,
-            ( FUNC_ADD) ->   (ID_ADD).U,
-            ( FUNC_ADDU ) ->   (ID_ADDU ).U,
-            ( FUNC_SUBU ) ->   (ID_SUBU ).U,
+       ( OP_SPECIAL) -> MuxLookup(FunctD,ID_NULL.U,Seq( 
+            ( FUNC_JR)   ->   (ID_JR).U,
+            ( FUNC_JALR) ->   (ID_JALR.U)
+       ))))
+
+    val muldiv_type = MuxLookup(OpD,0.U,Seq(
+        OP_SPECIAL -> MuxLookup(FunctD,0.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
+            FUNC_DIV   ->   1.U,
+            FUNC_DIVU  ->   1.U,
+            FUNC_MULT  ->   1.U,
+            FUNC_MULTU ->   1.U)),
+        OP_SPECIAL2 -> MuxLookup(FunctD,0.U,Seq(
+            FUNC_MUL    -> 1.U,
+            FUNC_MADD   -> 1.U,
+            FUNC_MADDU -> 1.U,
+            FUNC_MSUB -> 1.U,
+            FUNC_MSUBU -> 1.U
+        ))))
+    io.inst_opcode(opcode_muldiv) := MuxLookup(OpD,ID_NULL.U,Seq(
+        OP_SPECIAL -> MuxLookup(FunctD,ID_NULL.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
             ( FUNC_DIV) ->   (ID_DIV).U,
             ( FUNC_DIVU) ->   (ID_DIVU).U,
             ( FUNC_MULT) ->   (ID_MULT).U,
-            ( FUNC_MULTU) ->   (ID_MULTU).U,
-            ( FUNC_NOR) ->   (ID_NOR).U,
-            ( FUNC_SLLV ) ->   (ID_SLLV ).U,
-            ( FUNC_SRA) ->   (ID_SRA).U,
-            ( FUNC_SRAV) ->   (ID_SRAV).U,
-            ( FUNC_SRL) ->   (ID_SRL).U,
-            ( FUNC_SRLV) ->   (ID_SRLV ).U,
-            ( FUNC_JR) ->   (ID_JR).U,
-            ( FUNC_JALR) ->   (ID_JALR.U),
-            ( FUNC_MFHI ) ->   (ID_MFHI.U ),
-            ( FUNC_MFLO) ->   (ID_MFLO.U ),
-            ( FUNC_MTHI) ->   (ID_MTHI.U),
-            ( FUNC_MTLO) ->   (ID_MTLO.U),
-            ( FUNC_BREAK ) ->   (ID_BREAK.U ),
-            ( FUNC_SYSCALL ) ->   (ID_SYSCALL.U ),
-            FUNC_MOVN       -> (ID_MOVN.U),
-            FUNC_MOVZ       -> ID_MOVZ.U,
-            FUNC_TEQ  -> (ID_TEQ.U),
-            FUNC_TNE     -> (ID_TNE.U),
-            FUNC_TGEU     -> ID_TGEU.U,
-            FUNC_TGE    -> ID_TGE.U,
-            FUNC_TLT    -> ID_TLT.U,
-            FUNC_TLTU -> ID_TLTU.U
-            )),
-        (  OP_SPECIAL2) -> MuxLookup(FunctD,ID_NULL.U,Seq(
-            FUNC_CLO -> ID_CLO.U,
-            FUNC_CLZ    -> ID_CLZ.U,
+            ( FUNC_MULTU) ->   (ID_MULTU).U)),
+        OP_SPECIAL2 -> MuxLookup(FunctD,ID_NULL.U,Seq(
             FUNC_MUL    -> ID_MUL.U,
             FUNC_MADD   -> ID_MADD.U,
             FUNC_MADDU -> ID_MADDU.U,
             FUNC_MSUB -> ID_MSUB.U,
             FUNC_MSUBU -> ID_MSUBU.U
-        )),
-        ( OP_REGIMM) -> MuxLookup(RtD,ID_NULL.U,Seq( //后面这里可以改,在id时就开始算分支
-            ( RT_BGEZ )  -> (ID_BGEZ.U ),
-            ( RT_BGEZAL )  -> (ID_BGEZAL.U ),
-            ( RT_BLTZ )  -> (ID_BLTZ.U ),
-            ( RT_BLTZAL )  -> (ID_BLTZAL.U ),
-            RT_TEQI -> (ID_TEQI.U ),
-            RT_TNEI     -> (ID_TNEI.U ),
-            RT_TGEI     -> (ID_TGEI.U ),
-            RT_TGEIU     -> (ID_TGEIU.U ),
-            RT_TLTI     -> (ID_TLTI.U),
-            RT_TLTIU    -> (ID_TLTIU.U )
-        )),
-        ( OP_PRIVILEGE) -> MuxLookup(coD,ID_NULL.U,Seq(
+        ))))
+    
+    val mem_type = MuxLookup(FunctD,0.U,Seq(
+        OP_LBU  -> 1.U,
+        OP_LH   -> 1.U,
+        OP_LHU  -> 1.U,
+        OP_LW   -> 1.U,
+        OP_SB   -> 1.U,
+        OP_SH   -> 1.U,
+        OP_SW   -> 1.U,  
+        OP_LWL  -> 1.U,
+        OP_LWR  -> 1.U,
+        OP_SWL  -> 1.U,
+        OP_SWR  -> 1.U
+    ))
+    io.inst_opcode(opcode_mem) := MuxLookup(FunctD,ID_NULL.U,Seq(
+        OP_LB   -> (ID_LB.U),
+        OP_LBU  -> (ID_LBU.U),
+        OP_LH   -> (ID_LH.U),
+        OP_LH   -> (ID_LHU.U),
+        OP_LW   -> (ID_LW.U),
+        OP_SB   -> (ID_SB.U),
+        OP_SH   -> (ID_SH.U),
+        OP_SW   -> (ID_SW.U),
+        OP_LWL  -> (ID_LWL).U,
+        OP_LWR  -> (ID_LWR).U,
+        OP_SWL  -> (ID_SWL).U,
+        OP_SWR  -> (ID_SWR).U,
+    ))
+    val privilege_type = MuxLookup(FunctD,0.U,Seq(
+        OP_CACHE  -> 1.U, 
+        OP_SPECIAL  -> MuxLookup(FunctD,0.U,Seq( 
+            FUNC_BREAK   ->   1.U,
+            FUNC_SYSCALL ->   1.U)),
+        OP_PRIVILEGE -> MuxLookup(coD,0.U,Seq(
+            CO_SET -> MuxLookup(FunctD,1.U,Seq(
+                    FUNC_TLBP  -> 1.U,
+                    FUNC_TLBR  -> 1.U,
+                    FUNC_TLBWI -> 1.U,
+                    FUNC_TLBWR -> 1.U,
+                    FUNC_ERET  -> 1.U,
+                    FUNC_WAIT  -> 1.U
+            )),
+            CO_RESET -> MuxLookup(coD_res,0.U,Seq(
+                    COP_MFC0 -> 1.U,
+                    COP_MTC0 -> 1.U
+            ))
+    ))))
+    io.inst_opcode(opcode_privilege) := MuxLookup(FunctD,ID_NULL.U,Seq(
+        OP_CACHE    -> ID_CACHE.U, 
+        OP_SPECIAL  -> MuxLookup(FunctD,0.U,Seq( 
+            FUNC_BREAK   ->   ID_BREAK.U,
+            FUNC_SYSCALL ->   ID_SYSCALL.U)),
+        OP_PRIVILEGE -> MuxLookup(coD,ID_NULL.U,Seq(
             CO_SET -> MuxLookup(FunctD,ID_NULL.U,Seq(
-                    FUNC_TLBP -> ID_TLBP.U,
-                    FUNC_TLBR -> ID_TLBR.U,
+                    FUNC_TLBP  -> ID_TLBP.U,
+                    FUNC_TLBR  -> ID_TLBR.U,
                     FUNC_TLBWI -> ID_TLBWI.U,
-                    FUNC_TLBWR  -> ID_TLBWR.U,
-                    FUNC_ERET -> ID_ERET.U,
-                    FUNC_WAIT -> ID_WAIT.U
+                    FUNC_TLBWR -> ID_TLBWR.U,
+                    FUNC_ERET  -> ID_ERET.U,
+                    FUNC_WAIT  -> ID_WAIT.U
             )),
             CO_RESET -> MuxLookup(coD_res,ID_NULL.U,Seq(
                     COP_MFC0 -> ID_MFC0.U,
                     COP_MTC0 -> ID_MTC0.U
             ))
-
-        ))
-        // MuxCase(ID_NULL.U,Seq( //后面这里可以改,在id时就开始算分支
-        //     (RsD === RS_ERET )  -> (ID_ERET.U ),
-        //     (RsD === RS_MFC0 )  -> (ID_MFC0.U ),
-        //     (RsD === RS_MTC0 )  -> (ID_MTC0.U )
-        // ))
-
+    ))))
+    val nop_type = MuxLookup(OpD,0.U,Seq(
+         OP_PREF   -> 1.U
     ))
-
-    io1.BadInstrD := ins_id === (ID_NULL ).U
-    io1.BreakD    := ins_id === (ID_BREAK).U
-    io1.SysCallD  := ins_id === (ID_SYSCALL).U
-    io1.EretD     := ins_id === (ID_ERET).U
-
-    val get_controls = Wire(UInt(29.W))
-    io.MemRLD       := get_controls(28,27)
-    io.BranchD_Flag := get_controls(26)
-    io.RegWriteD := get_controls(25)   //实在不知道咋写呜呜呜
-    io.RegDstD   := get_controls(24,23) 
-    io.ALUSrcD   := get_controls(22,21)
-    io.ImmUnsigned := get_controls(20) 
-    io.BranchD   := get_controls(19,14)
-    io.JumpD     := get_controls(13)
-    io.JRD       := get_controls(12) 
-    io.LinkD     := get_controls(11)
-    io.HiLoWriteD:= get_controls(10,9)
-    io.HiLoToRegD := get_controls(8,7)
-    io.CP0WriteD  := get_controls(6)
-    io.CP0ToRegD  := get_controls(5)
-    io.MemWriteD  := get_controls(4) 
-    io.MemToRegD  := get_controls(3)
-    io.LoadUnsignedD :=  get_controls(2)
-    io.MemWidthD :=get_controls(1,0)   
-    get_controls := MuxLookup(ins_id,0.U,Seq(
-            (ID_NULL   ).U -> CTRL_NULL,
-            (ID_ADDI   ).U -> CTRL_ITYPE,
-            (ID_SUB    ).U -> CTRL_RTYPE,
-            (ID_AND    ).U -> CTRL_RTYPE,
-            (ID_OR     ).U -> CTRL_RTYPE,
-            (ID_XOR    ).U -> CTRL_RTYPE,
-            (ID_SLT    ).U -> CTRL_RTYPE,
-            (ID_SLL    ).U -> CTRL_RTYPES,
-            (ID_ANDI   ).U -> CTRL_ITYPEU,
-            (ID_ADD    ).U -> CTRL_RTYPE,
-            (ID_ADDU   ).U -> CTRL_RTYPE,
-            (ID_ADDIU  ).U -> CTRL_ITYPE,
-            (ID_SUBU   ).U -> CTRL_RTYPE,
-            (ID_SLTI   ).U -> CTRL_ITYPE,
-            (ID_SLTU   ).U -> CTRL_RTYPE,
-            (ID_SLTIU  ).U -> CTRL_ITYPE,
-            (ID_DIV    ).U -> CTRL_DIV,
-            (ID_DIVU   ).U -> CTRL_DIV,
-            (ID_MULT   ).U -> CTRL_ITYPEU,
-            (ID_SLLV   ).U -> CTRL_RTYPE,
-            (ID_SRA    ).U -> CTRL_RTYPES,
-            (ID_SRAV   ).U -> CTRL_RTYPE,
-            (ID_SRL    ).U -> CTRL_RTYPES,
-            (ID_SRLV   ).U -> CTRL_RTYPE,
-            (ID_BEQ    ).U -> CTRL_BEQ,
-            (ID_BNE    ).U -> CTRL_BNE,
-            (ID_BGEZ   ).U -> CTRL_BGEZ,
-            (ID_BGEZAL ).U -> CTRL_BGEZAL,
-            (ID_BGTZ   ).U -> CTRL_BGTZ,
-            (ID_BLEZ   ).U -> CTRL_BLEZ,
-            (ID_BLTZ   ).U -> CTRL_BLTZ,
-            (ID_BLTZAL ).U -> CTRL_BLTZAL,
-            (ID_J      ).U -> CTRL_J,
-            (ID_JAL    ).U -> CTRL_JAL,
-            (ID_JR     ).U -> CTRL_JR,
-            (ID_JALR   ).U -> CTRL_JALR,
-            (ID_MFHI   ).U -> CTRL_MFHI,
-            (ID_MFLO   ).U -> CTRL_MFLO,
-            (ID_MTHI   ).U -> CTRL_MTHI,
-            (ID_MTLO   ).U -> CTRL_MTLO,
-            (ID_BREAK  ).U -> CTRL_BREAK,
-            (ID_SYSCALL).U -> CTRL_SYSCALL,
-            (ID_LB     ).U -> CTRL_LB,
-            (ID_LBU    ).U -> CTRL_LBU,
-            (ID_LH     ).U -> CTRL_LH,
-            (ID_LHU    ).U -> CTRL_LHU,
-            (ID_LW     ).U -> CTRL_LW,
-            (ID_SB     ).U -> CTRL_SB,
-            (ID_SH     ).U -> CTRL_SH,
-            (ID_SW     ).U -> CTRL_SW,
-            (ID_ERET   ).U -> CTRL_ERET,
-            (ID_MFC0   ).U -> CTRL_MFC0,
-            (ID_MTC0   ).U -> CTRL_MTC0,
-            (ID_SWL     .U) -> CTRL_SWL,
-            (ID_SWR   ) .U -> CTRL_SWR,
-            (ID_LWL   ) .U-> CTRL_LWL,
-            (ID_LWR   ) .U-> CTRL_LWR
+    io.inst_opcode(opcode_nop) := MuxLookup(OpD,ID_NULL.U,Seq(
+         OP_PREF   -> ID_PREF.U
     ))
+    val self_in_type = MuxLookup(OpD,0.U,Seq(
+        OP_SPECIAL -> MuxLookup(FunctD,0.U,Seq( 
+            FUNC_TEQ      -> 1.U,
+            FUNC_TNE      -> 1.U,
+            FUNC_TGEU     -> 1.U,
+            FUNC_TGE      -> 1.U,
+            FUNC_TLT      -> 1.U,
+            FUNC_TLTU     -> 1.U)),
+        OP_REGIMM -> MuxLookup(RtD,0.U,Seq( //后面这里可以改,在id时就开始算分支
+            RT_TEQI     -> 1.U,
+            RT_TNEI     -> 1.U,
+            RT_TGEI     -> 1.U,
+            RT_TGEIU    -> 1.U,
+            RT_TLTI     -> 1.U,           
+            RT_TLTIU    -> 1.U ))))
+    io.inst_opcode(opcode_self_in) := MuxLookup(OpD,0.U,Seq(
+        (OP_SPECIAL) -> MuxLookup(FunctD,ID_NULL.U,Seq( // 在op相同情况下，根据funct来判断是哪一条指令 这个得写特判
+            FUNC_TEQ      -> ID_TEQ.U,
+            FUNC_TNE      -> ID_TNE.U,
+            FUNC_TGEU     -> ID_TGEU.U,
+            FUNC_TGE      -> ID_TGE.U,
+            FUNC_TLT      -> ID_TLT.U,
+            FUNC_TLTU     -> ID_TLTU.U)),
+        OP_REGIMM -> MuxLookup(RtD,ID_NULL.U,Seq( //后面这里可以改,在id时就开始算分支 
+            RT_TEQI       -> ID_TEQI.U ,
+            RT_TNEI       -> ID_TNEI.U ,
+            RT_TGEI       -> ID_TGEI.U ,
+            RT_TGEIU      -> ID_TGEIU.U,
+            RT_TLTI       -> ID_TLTI.U ,
+            RT_TLTIU      -> ID_TLTIU.U))))
 
-    val get_alu_op = Wire(UInt(24.W))
-    io.ALUCtrlD  := Mux(reset.asBool,1.U<<ALU_NULL,get_alu_op)
+    io.inst_type(opcode_alu) := alu_type
+    io.inst_type(opcode_muldiv) := muldiv_type
+    io.inst_type(opcode_mem) := mem_type
+    io.inst_type(opcode_self_in) := self_in_type
+    io.inst_type(opcode_nop) := nop_type
+    io.inst_type(opcode_branch) := branch_type
+    io.inst_type(opcode_privilege) := privilege_type
+    // io.BranchD_Flag := Mux(OpD === )
 
-    get_alu_op := MuxLookup(ins_id,1.U<<ALU_NULL,Seq(
+
+    io.BadInstrD := Cat(io.inst_type(opcode_alu),io.inst_type(opcode_branch),io.inst_type(opcode_mem),io.inst_type(opcode_muldiv),
+        io.inst_type(opcode_nop),io.inst_type(opcode_privilege),io.inst_type(opcode_self_in))  === 0.U   
+    val alu_type_opcode = io.inst_opcode(alu_type)
+    val get_alu_op = Wire(UInt(32.W))
+    io.ALUCtrlD  := Mux(reset.asBool,1.U<<0,get_alu_op)
+    get_alu_op := MuxLookup(alu_type_opcode,1.U<<ALU_NULL,Seq(
         (ID_NULL    ).U  ->(1.U<<ALU_NULL) ,
         (ID_ADD     ).U  ->(1.U<<ALU_ADDE) ,
         (ID_ADDI    ).U  ->(1.U<<ALU_ADDE) ,
@@ -282,54 +351,53 @@ class cu extends Module with mips_macros {
         (ID_SRL     ).U  ->(1.U<<ALU_SRL) ,
         (ID_SRLV    ).U  ->(1.U<<ALU_SRL) ,
 
-        (ID_MUL).U -> (1.U<<ALU_MUL) ,
-        (ID_CLO).U ->(1.U<<ALU_CLO) ,
-        (ID_CLZ).U ->(1.U<<ALU_CLZ) ,
-        (ID_MOVN).U -> (1.U<<ALU_MOVN) ,
-        (ID_MOVZ).U ->(1.U<<ALU_MOVZ) ,
-        (ID_MADD).U ->(1.U<<ALU_MADD) ,
-        (ID_MADDU).U -> (1.U<<ALU_MADDU) ,
-        (ID_MSUB).U ->(1.U<<ALU_MSUB) ,
-        (ID_MSUBU).U ->(1.U<<ALU_MSUBU) ,
-        // (ID_BEQ     ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BNE     ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BGEZ    ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BGEZAL  ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BGTZ    ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BLEZ    ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BLTZ    ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_BLTZAL  ).U  ->(1.U<<ALU_SUB) ,
-        // (ID_J       ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_JAL     ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_JR      ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_JALR    ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_MFHI    ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_MFLO    ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_MTHI    ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_MTLO    ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_BREAK   ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_SYSCALL ).U  ->(1.U<<ALU_NULL) ,
-        // (ID_LB      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LBU     ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LH      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LHU     ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LW      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_SB      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_SH      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_SW      ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_SWL     ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_SWR     ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LWL     ).U  ->(1.U<<ALU_ADD) ,
-        // (ID_LWR     ).U  ->(1.U<<ALU_ADD) ,
-        (ID_ERET    ).U  ->(1.U<<ALU_NULL) ,
-        (ID_MFC0    ).U  ->(1.U<<ALU_NULL) ,
-        (ID_MTC0    ).U  ->(1.U<<ALU_NULL)        
+        (ID_MUL     ).U -> (1.U<<ALU_MUL) ,
+        (ID_CLO     ).U ->(1.U<<ALU_CLO) ,
+        (ID_CLZ     ).U ->(1.U<<ALU_CLZ) ,
+        (ID_MOVN    ).U -> (1.U<<ALU_MOVN) ,
+        (ID_MOVZ    ).U ->(1.U<<ALU_MOVZ) ,
+        (ID_MADD    ).U ->(1.U<<ALU_MADD) ,
+        (ID_MADDU   ).U -> (1.U<<ALU_MADDU) ,
+        (ID_MSUB    ).U ->(1.U<<ALU_MSUB) ,
+        (ID_MSUBU   ).U ->(1.U<<ALU_MSUBU) ,    
     ))
+    get_alu_op := Cat(alu_type_opcode === ID_NULL.U,
+         0.U(1.W),
+        alu_type_opcode === ID_ADD.U || alu_type_opcode === ID_ADDI.U,
+        alu_type_opcode === ID_ADDU.U || alu_type_opcode === ID_ADDIU.U,
+        alu_type_opcode === ID_AND.U  || alu_type_opcode === ID_ANDI.U,
+        0.U(1.W), // alu_type_opcode === ID_DIV.U , 
+        0.U(1.W),//alu_type_opcode === ID_DIVU.U  ,
+        alu_type_opcode === ID_LUI.U , 
+        0.U(2.W),//alu_type_opcode === ID_MULT.U ,
+        //alu_type_opcode === ID_MULTU.U  ,
+        alu_type_opcode === ID_NOR.U , 
+        alu_type_opcode === ID_OR.U ,
+        alu_type_opcode === ID_SLL.U  ||   alu_type_opcode === ID_SLLV.U,
+        alu_type_opcode === ID_SLT.U  ||   alu_type_opcode === ID_SLTI.U,
+        alu_type_opcode === ID_SLTU.U ||   alu_type_opcode === ID_SLTIU.U,
+        alu_type_opcode === ID_SRA.U  ||   alu_type_opcode === ID_SRAV.U,
+        alu_type_opcode === ID_SRL.U ||   alu_type_opcode === ID_SRLV.U,
+        1.U(1.W),
+        alu_type_opcode === ID_SUB.U  ,//SUBE
+        alu_type_opcode === ID_SUBU.U , //SUBU
+        alu_type_opcode === ID_XOR.U || alu_type_opcode === ID_XORI.U,
+        alu_type_opcode === ID_MOVN.U ,
+        alu_type_opcode === ID_MOVZ.U  ,
+        alu_type_opcode === ID_CLO.U , 
+        alu_type_opcode === ID_CLZ.U ,
+        0.U(5.W)
+        // alu_type_opcode === ID_MUL.U ,
+        // alu_type_opcode === ID_MADD.U ,
+        // alu_type_opcode === ID_MADDU.U ,        
+        // alu_type_opcode === ID_MSUB.U , 
+        // alu_type_opcode === ID_MSUBU.U 
+        )
 }
 
 
-// object cu1_test extends App{
-//     (new ChiselStage).emitVerilog(new cu_1)
-// }
+object cu_test extends App{
+    (new ChiselStage).emitVerilog(new cu)
+}
 
 

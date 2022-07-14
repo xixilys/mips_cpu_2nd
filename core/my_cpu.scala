@@ -173,10 +173,13 @@ for(i <- 0 to 1) {
     stage_decoder_pc(i).io.flush := stage_decoder_flush
     stage_decoder_pc(i).io.stall := stage_decoder_stall   
 }
-val cu_decoder = Seq.fill(2)(Module(new cu)) // 两个解码模块
-//flush and stall
+// val cu_decoder = Seq.fill(2)(Module(new cu)) // 两个解码模块
+// for(i<- 0 to 1) {
+//     cu_decoder(i).io1.InstrD := stage_decoder_pc(i).io_out.pc_inst_out
+// }
+// flush and stall
 
-
+    
 //-------------reg renaming----------
   
 

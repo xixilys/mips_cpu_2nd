@@ -60,7 +60,7 @@ class issue_queue (LENGTH:Int)extends Module { //发射队列
     val LENGTH_WIDTH = log2Up(LENGTH)
     val io = IO(new Bundle{//这个我是需要读所有的寄存器，是一个很麻烦的结构
         val inst_write = Input(UInt(2.W))
-        val inst_issue = Input(UInt(2.W))
+//        val inst_issue = Input(UInt(2.W))
         val inst_issue_num = Input(UInt(2.W))
         val inst_issue_addr = Vec(2,Input(UInt(LENGTH_WIDTH.W))) // 真正发射出去的指令地址
         val full = Output(Bool())
